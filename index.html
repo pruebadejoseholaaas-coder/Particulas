@@ -1,1 +1,182 @@
 
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#050611">
+  <meta name="description" content="Explora un universo 3D de partículas controlado por tus manos. Crea galaxias, ondas y figuras luminosas en tiempo real.">
+  <title>Particle Universe 3D — Shape Your Universe</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="stylesheet" href="./style.css">
+</head>
+<body>
+  <main id="app">
+    <div id="scene" aria-label="Escena interactiva de partículas 3D"></div>
+    <div class="ambient"></div>
+
+    <header class="topbar">
+      <div class="brand">
+        <div class="brand-mark" aria-hidden="true">✳</div>
+        <div>
+          <div class="brand-name">PARTICLE <span>UNIVERSE</span></div>
+          <div class="brand-caption">INTERACTIVE 3D EXPERIENCE</div>
+        </div>
+      </div>
+
+      <div class="top-actions">
+        <div class="status-pill">
+          <span id="statusDot" class="status-dot"></span>
+          <span id="topStatus">MOTOR 3D INICIALIZANDO</span>
+        </div>
+        <button class="icon-button" id="panelToggle"
+          aria-label="Mostrar u ocultar controles" title="Controles">☷</button>
+        <button class="icon-button" id="fullscreen"
+          aria-label="Pantalla completa" title="Pantalla completa">⛶</button>
+      </div>
+    </header>
+
+    <section class="hud" aria-label="Información del universo">
+      <div class="eyebrow">YOUR HANDS · YOUR UNIVERSE</div>
+      <h1 class="hero-title">SHAPE YOUR <span>UNIVERSE</span></h1>
+      <p class="hero-copy">
+        Miles de partículas. Infinitas posibilidades.
+        Transforma el espacio con tus propias manos.
+      </p>
+      <div class="metrics">
+        <div class="metric">
+          <div class="metric-value" id="particleMetric">0</div>
+          <div class="metric-label">PARTÍCULAS</div>
+        </div>
+        <div class="metric">
+          <div class="metric-value" id="fpsMetric">--</div>
+          <div class="metric-label">FPS APROX.</div>
+        </div>
+      </div>
+    </section>
+
+    <aside class="panel" id="controlPanel" aria-label="Controles 3D">
+      <section class="section">
+        <div class="panel-heading">
+          <h2 class="section-title">01 / FIGURAS</h2>
+          <span class="section-number">SHAPES</span>
+        </div>
+
+        <label class="field-label" for="shapeSelect">
+          Forma del universo
+        </label>
+        <select id="shapeSelect">
+          <option value="galaxy">Galaxia espiral</option>
+          <option value="sphere">Esfera de energía</option>
+          <option value="heart">Corazón luminoso</option>
+          <option value="flower">Flor cósmica</option>
+          <option value="saturn">Planeta con anillos</option>
+          <option value="wave">Onda dimensional</option>
+          <option value="burst">Explosión estelar</option>
+          <option value="dna">Doble hélice</option>
+          <option value="torus">Anillo de energía</option>
+          <option value="helix">Espiral infinita</option>
+        </select>
+
+        <div class="button-row">
+          <button class="button secondary" id="randomShape">✧ SORPRÉNDEME</button>
+          <button class="button secondary" id="resetView">↺ REINICIAR</button>
+        </div>
+      </section>
+
+      <section class="section">
+        <div class="panel-heading">
+          <h2 class="section-title">02 / APARIENCIA</h2>
+          <span class="section-number">VISUAL FX</span>
+        </div>
+
+        <label class="field-label" for="particleCount">
+          Densidad
+          <output class="field-value" id="countValue">6500</output>
+        </label>
+        <input id="particleCount" type="range"
+          min="1500" max="12000" step="500" value="6500">
+
+        <label class="field-label" for="particleSize">
+          Tamaño
+          <output class="field-value" id="sizeValue">100%</output>
+        </label>
+        <input id="particleSize" type="range"
+          min="40" max="200" step="10" value="100">
+
+        <label class="field-label" for="speed">
+          Velocidad
+          <output class="field-value" id="speedValue">50%</output>
+        </label>
+        <input id="speed" type="range" min="0" max="100" value="50">
+
+        <label class="field-label" for="energy">
+          Energía de movimiento
+          <output class="field-value" id="energyValue">60%</output>
+        </label>
+        <input id="energy" type="range" min="0" max="100" value="60">
+
+        <label class="field-label" for="colorPicker">Color principal</label>
+        <input id="colorPicker" type="color" value="#9b7bff">
+
+        <div class="palette" aria-label="Colores rápidos">
+          <button class="swatch selected" data-color="#9b7bff"
+            style="background:#9b7bff" aria-label="Violeta"></button>
+          <button class="swatch" data-color="#5cecff"
+            style="background:#5cecff" aria-label="Cian"></button>
+          <button class="swatch" data-color="#ff65d4"
+            style="background:#ff65d4" aria-label="Rosa"></button>
+          <button class="swatch" data-color="#70ff9c"
+            style="background:#70ff9c" aria-label="Verde"></button>
+          <button class="swatch" data-color="#ffffff"
+            style="background:#ffffff" aria-label="Blanco"></button>
+        </div>
+      </section>
+
+      <section class="section">
+        <div class="panel-heading">
+          <h2 class="section-title">03 / CONTROL GESTUAL</h2>
+          <span class="section-number">AI VISION</span>
+        </div>
+
+        <div class="gesture-status" id="gestureStatus" role="status">
+          <strong id="gestureTitle">Control manual</strong>
+          <span id="gestureDescription">
+            Activa la cámara para controlar las partículas con tus manos.
+          </span>
+        </div>
+
+        <video id="cameraPreview" class="camera-preview"
+          autoplay playsinline muted></video>
+
+        <button class="button" id="cameraButton">
+          ◉ ACTIVAR CÁMARA
+        </button>
+
+        <div class="button-row">
+          <button class="button secondary" id="attractButton">◎ ATRAER</button>
+          <button class="button secondary" id="explodeButton">✺ EXPANDIR</button>
+        </div>
+
+        <button class="button secondary" id="pauseButton">
+          Ⅱ PAUSAR ANIMACIÓN
+        </button>
+
+        <p class="hero-copy">
+          La cámara solo se activa cuando tú lo solicitas.
+          No se necesita micrófono.
+        </p>
+      </section>
+    </aside>
+
+    <div class="bottom-hint">
+      MUEVE · EXPLORA · TRANSFORMA · CREA
+    </div>
+
+    <div id="toast" class="toast" role="status" aria-live="polite"></div>
+  </main>
+
+  <script type="module" src="./js/main.js"></script>
+</body>
+</html>
+
