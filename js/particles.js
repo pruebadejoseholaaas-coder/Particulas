@@ -5,7 +5,7 @@ import { createShape } from "./shapes.js";
 export class ParticleEngine {
   constructor(container) {
     this.container = container;
-    this.count = 5000;
+    this.count = 1000;
     this.speed = 1;
     this.energy = 1;
     this.particleSize = 0.035;
