@@ -177,11 +177,26 @@ function setupControls() {
 
   ui.resetView?.addEventListener("click", resetView);
 
+    const countLimit = () =>
+    window.innerWidth < 900 ||
+    (navigator.hardwareConcurrency || 4) <= 4 ||
+    (navigator.deviceMemory || 4) <= 4
+      ? 3000
+      : 12000;
+
   ui.particleCount?.addEventListener("input", () => {
-    const count = Number(ui.particleCount.value);
+    const label = document.getElementById("countValue");
+    if (label) {
+      label.textContent = Math.min(Number(ui.particleCount.value), countLimit());
+    }
+  });
+
+  ui.particleCount?.addEventListener("change", () => {
+    const count = Math.min(Number(ui.particleCount.value), countLimit());
 
     if (Number.isFinite(count) && count >= 100) {
-      engine.setCount(Math.min(count, 20000));
+      ui.particleCount.value = String(count);
+      engine.setCount(count);
       updateMetrics();
     }
   });
