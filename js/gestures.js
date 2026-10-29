@@ -87,11 +87,15 @@ export class HandGestureController {
     if (!this.running || !this.video || !this.landmarker) return;
 
     if (
-      this.video.readyState >= 2 &&
-      this.video.currentTime !== this.lastVideoTime
-    ) {
-      this.lastVideoTime = this.video.currentTime;
+         const nowCheck = performance.now();
 
+    if (
+      this.video.readyState >= 2 &&
+      this.video.currentTime !== this.lastVideoTime &&
+      nowCheck - (this.lastDetect || 0) > 66
+    ) {
+      this.lastDetect = nowCheck;
+      this.lastVideoTime = this.video.currentTime;
       try {
         const result = this.landmarker.detectForVideo(
           this.video,
