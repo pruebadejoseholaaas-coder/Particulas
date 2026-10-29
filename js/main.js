@@ -374,20 +374,21 @@ function startApp() {
     engine.setShape(ui.shapeSelect.value || "galaxy");
   }
 
-  if (ui.particleCount) {
-    const initialCount = Number(ui.particleCount.value);
+   const weakDevice =
+    window.innerWidth < 900 ||
+    (navigator.hardwareConcurrency || 4) <= 4 ||
+    (navigator.deviceMemory || 4) <= 4;
 
-    if (Number.isFinite(initialCount) && initialCount >= 100) {
-      engine.setCount(Math.min(initialCount, 12000));
-    } else {
-      ui.particleCount.value = "5000";
-    }
+  const initialCount = weakDevice ? 1500 : 4000;
+  engine.setCount(initialCount);
+
+  if (ui.particleCount) ui.particleCount.value = String(initialCount);
+
+  if (ui.particleSize) {
+    engine.setSize(0.035 * Number(ui.particleSize.value) / 100);
   }
-
-  if (ui.particleSize) engine.setSize(Number(ui.particleSize.value));
-  if (ui.speed) engine.setSpeed(Number(ui.speed.value));
-  if (ui.energy) engine.setEnergy(Number(ui.energy.value));
-  if (ui.colorPicker) engine.setColor(ui.colorPicker.value);
+  if (ui.speed) engine.setSpeed(Number(ui.speed.value) / 50);
+  if (ui.energy) engine.setEnergy(Number(ui.energy.value) / 60);
 
   setupControls();
 
