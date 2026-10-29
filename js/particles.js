@@ -33,12 +33,12 @@ export class ParticleEngine {
     );
     this.camera.position.set(0, 0, 17);
 
-    this.renderer = new THREE.WebGLRenderer({
-      antialias: true,
+        this.renderer = new THREE.WebGLRenderer({
+      antialias: false,
       alpha: false,
-      powerPreference: "high-performance"
+      powerPreference: "low-power"
     });
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.5));
+    this.renderer.setPixelRatio(1);
     this.renderer.setSize(container.clientWidth, container.clientHeight);
     container.appendChild(this.renderer.domElement);
 
