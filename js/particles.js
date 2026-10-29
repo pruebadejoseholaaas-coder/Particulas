@@ -151,6 +151,11 @@ export class ParticleEngine {
 
     this.animationId = requestAnimationFrame(this.animate);
 
+    if (document.hidden) {
+      this.clock.getDelta();
+      return;
+    }
+
     const nowMs = performance.now();
     if (nowMs - this.lastFrameTime < 30) return;
     this.lastFrameTime = nowMs;
