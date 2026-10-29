@@ -1,4 +1,3 @@
-
 import * as THREE from "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js";
 import { createShape } from "./shapes.js";
 
@@ -18,6 +17,7 @@ export class ParticleEngine {
     this.clock = new THREE.Clock();
     this.frameCount = 0;
     this.lastFpsTime = 0;
+    this.lastFrameTime = 0;
     this.fps = 0;
     this.disposed = false;
 
@@ -33,7 +33,7 @@ export class ParticleEngine {
     );
     this.camera.position.set(0, 0, 17);
 
-        this.renderer = new THREE.WebGLRenderer({
+    this.renderer = new THREE.WebGLRenderer({
       antialias: false,
       alpha: false,
       powerPreference: "low-power"
@@ -150,6 +150,10 @@ export class ParticleEngine {
     if (this.disposed) return;
 
     this.animationId = requestAnimationFrame(this.animate);
+
+    const nowMs = performance.now();
+    if (nowMs - this.lastFrameTime < 30) return;
+    this.lastFrameTime = nowMs;
 
     const delta = Math.min(this.clock.getDelta(), 0.05);
     const elapsed = this.clock.elapsedTime;
