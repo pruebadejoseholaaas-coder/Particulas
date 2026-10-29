@@ -187,15 +187,24 @@ function setupControls() {
   });
 
   ui.particleSize?.addEventListener("input", () => {
-    engine.setSize(Number(ui.particleSize.value));
+    const value = Number(ui.particleSize.value);
+    engine.setSize(0.035 * value / 100);
+    const label = document.getElementById("sizeValue");
+    if (label) label.textContent = value + "%";
   });
 
   ui.speed?.addEventListener("input", () => {
-    engine.setSpeed(Number(ui.speed.value));
+    const value = Number(ui.speed.value);
+    engine.setSpeed(value / 50);
+    const label = document.getElementById("speedValue");
+    if (label) label.textContent = value + "%";
   });
 
   ui.energy?.addEventListener("input", () => {
-    engine.setEnergy(Number(ui.energy.value));
+    const value = Number(ui.energy.value);
+    engine.setEnergy(value / 60);
+    const label = document.getElementById("energyValue");
+    if (label) label.textContent = value + "%";
   });
 
   ui.colorPicker?.addEventListener("input", () => {
