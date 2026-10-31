@@ -9,24 +9,30 @@ export class HandGestureController {
   constructor(onGesture, onStatus) {
     this.onGesture = onGesture;
     this.onStatus = onStatus;
+
     this.stream = null;
     this.video = null;
     this.landmarker = null;
+
     this.running = false;
     this.starting = false;
     this.lastVideoTime = -1;
-    this.frameId = null;
+    this.lastDetect = 0;
     this.lastUpdate = 0;
+    this.frameId = null;
   }
 
   async start(video) {
     if (this.running || this.starting) return;
+
     this.starting = true;
     this.video = video;
 
     try {
       if (!navigator.mediaDevices?.getUserMedia) {
-        throw new Error("Tu navegador no permite acceder a la cámara aquí.");
+        throw new Error(
+          "Tu navegador no permite acceder a la cámara aquí."
+        );
       }
 
       this.onStatus("Solicitando permiso para la cámara…");
@@ -36,17 +42,18 @@ export class HandGestureController {
         video: {
           facingMode: "user",
           width: { ideal: 640 },
-          height: { ideal: 480 }
+          height: { ideal: 480 },
+          frameRate: { ideal: 24, max: 30 }
         }
       });
 
       this.video.srcObject = this.stream;
+
       await this.video.play();
 
       this.onStatus("Cargando reconocimiento de manos…");
 
       const vision = await import(
-        /* @vite-ignore */
         `${MEDIAPIPE_CDN}/vision_bundle.mjs`
       );
 
@@ -54,90 +61,126 @@ export class HandGestureController {
         `${MEDIAPIPE_CDN}/wasm`
       );
 
-      this.landmarker = await vision.HandLandmarker.createFromOptions(
-        fileset,
-        {
-          baseOptions: { modelAssetPath: MODEL_URL },
-          runningMode: "VIDEO",
-          numHands: 2,
-          minHandDetectionConfidence: 0.55,
-          minHandPresenceConfidence: 0.5,
-          minTrackingConfidence: 0.5
-        }
-      );
+      this.landmarker =
+        await vision.HandLandmarker.createFromOptions(
+          fileset,
+          {
+            baseOptions: {
+              modelAssetPath: MODEL_URL
+            },
+            runningMode: "VIDEO",
+            numHands: 1,
+            minHandDetectionConfidence: 0.55,
+            minHandPresenceConfidence: 0.5,
+            minTrackingConfidence: 0.5
+          }
+        );
 
       this.running = true;
       this.starting = false;
+
+      this.lastVideoTime = -1;
+      this.lastDetect = 0;
+      this.lastUpdate = 0;
+
       this.onStatus("Cámara activa · muestra una mano");
+
       this.detectFrame();
+
     } catch (error) {
       this.starting = false;
+
       this.stop();
-      console.error("Error al iniciar la cámara:", error);
+
+      console.error(
+        "Error al iniciar la cámara:",
+        error
+      );
+
       this.onStatus(
         error?.name === "NotAllowedError"
           ? "Permiso de cámara denegado"
           : "No se pudo iniciar la cámara"
       );
+
       throw error;
     }
   }
 
   detectFrame() {
-    if (!this.running || !this.video || !this.landmarker) return;
-
     if (
-         const nowCheck = performance.now();
+      !this.running ||
+      !this.video ||
+      !this.landmarker
+    ) {
+      return;
+    }
+
+    const nowCheck = performance.now();
 
     if (
       this.video.readyState >= 2 &&
       this.video.currentTime !== this.lastVideoTime &&
-      nowCheck - (this.lastDetect || 0) > 66
+      nowCheck - this.lastDetect >= 66
     ) {
       this.lastDetect = nowCheck;
       this.lastVideoTime = this.video.currentTime;
+
       try {
         const result = this.landmarker.detectForVideo(
           this.video,
-          performance.now()
+          nowCheck
         );
 
-        const hands = (result.landmarks || []).map((landmarks, index) => {
-          const wrist = landmarks[0];
-          const palm = landmarks[9];
-          const tips = [8, 12, 16, 20];
+        const hands = (result.landmarks || []).map(
+          (landmarks, index) => {
+            const wrist = landmarks[0];
+            const tips = [8, 12, 16, 20];
 
-          let extended = 0;
+            let extended = 0;
 
-          for (const tipIndex of tips) {
-            const tip = landmarks[tipIndex];
-            const middle = landmarks[tipIndex - 2];
+            for (const tipIndex of tips) {
+              const tip = landmarks[tipIndex];
+              const middle = landmarks[tipIndex - 2];
 
-            if (Math.hypot(tip.x - wrist.x, tip.y - wrist.y) >
-                Math.hypot(middle.x - wrist.x, middle.y - wrist.y) * 1.12) {
-              extended++;
+              const tipDistance = Math.hypot(
+                tip.x - wrist.x,
+                tip.y - wrist.y
+              );
+
+              const middleDistance = Math.hypot(
+                middle.x - wrist.x,
+                middle.y - wrist.y
+              );
+
+              if (tipDistance > middleDistance * 1.12) {
+                extended++;
+              }
             }
+
+            const open = extended >= 3;
+
+            const pinchDistance = Math.hypot(
+              landmarks[4].x - landmarks[8].x,
+              landmarks[4].y - landmarks[8].y
+            );
+
+            const palm = landmarks[9];
+
+            return {
+              index,
+              x: (0.5 - palm.x) * 12,
+              y: (0.5 - palm.y) * 8,
+              z: -palm.z * 8,
+              open,
+              extended,
+              pinching: pinchDistance < 0.055,
+              landmarks
+            };
           }
+        );
 
-          const open = extended >= 3;
-          const pinchDistance = Math.hypot(
-            landmarks[4].x - landmarks[8].x,
-            landmarks[4].y - landmarks[8].y
-          );
-
-          return {
-            index,
-            x: (0.5 - palm.x) * 12,
-            y: (0.5 - palm.y) * 8,
-            z: -palm.z * 8,
-            open,
-            extended,
-            pinching: pinchDistance < 0.055,
-            landmarks
-          };
-        });
-
-        let gesture = {
+        const gesture = {
           hands,
           detected: hands.length > 0,
           openHand: hands.some(hand => hand.open),
@@ -148,7 +191,7 @@ export class HandGestureController {
           explosion: 0
         };
 
-        if (hands.length) {
+        if (hands.length > 0) {
           const center = hands.reduce(
             (acc, hand) => ({
               x: acc.x + hand.x / hands.length,
@@ -176,16 +219,25 @@ export class HandGestureController {
         }
 
         const now = performance.now();
-        if (now - this.lastUpdate > 40) {
+
+        if (now - this.lastUpdate >= 40) {
           this.lastUpdate = now;
           this.onGesture(gesture);
         }
+
       } catch (error) {
-        console.error("Error reconociendo gestos:", error);
+        console.error(
+          "Error reconociendo gestos:",
+          error
+        );
       }
     }
 
-    this.frameId = requestAnimationFrame(() => this.detectFrame());
+    if (this.running) {
+      this.frameId = requestAnimationFrame(
+        () => this.detectFrame()
+      );
+    }
   }
 
   stop() {
@@ -198,7 +250,10 @@ export class HandGestureController {
     }
 
     if (this.stream) {
-      this.stream.getTracks().forEach(track => track.stop());
+      this.stream.getTracks().forEach(track => {
+        track.stop();
+      });
+
       this.stream = null;
     }
 
