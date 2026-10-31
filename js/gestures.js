@@ -16,11 +16,17 @@ export class HandGestureController {
 
     this.running = false;
     this.starting = false;
+
     this.lastVideoTime = -1;
     this.lastDetect = 0;
     this.lastUpdate = 0;
+
     this.frameId = null;
   }
+
+  // ========================================
+  // INICIAR CÁMARA
+  // ========================================
 
   async start(video) {
     if (this.running || this.starting) return;
@@ -31,7 +37,7 @@ export class HandGestureController {
     try {
       if (!navigator.mediaDevices?.getUserMedia) {
         throw new Error(
-          "Tu navegador no permite acceder a la cámara aquí."
+          "Tu navegador no permite acceder a la cámara."
         );
       }
 
@@ -57,9 +63,10 @@ export class HandGestureController {
         `${MEDIAPIPE_CDN}/vision_bundle.mjs`
       );
 
-      const fileset = await vision.FilesetResolver.forVisionTasks(
-        `${MEDIAPIPE_CDN}/wasm`
-      );
+      const fileset =
+        await vision.FilesetResolver.forVisionTasks(
+          `${MEDIAPIPE_CDN}/wasm`
+        );
 
       this.landmarker =
         await vision.HandLandmarker.createFromOptions(
@@ -68,8 +75,12 @@ export class HandGestureController {
             baseOptions: {
               modelAssetPath: MODEL_URL
             },
+
             runningMode: "VIDEO",
-            numHands: 1,
+
+            // Reconocer dos manos
+            numHands: 2,
+
             minHandDetectionConfidence: 0.55,
             minHandPresenceConfidence: 0.5,
             minTrackingConfidence: 0.5
@@ -83,7 +94,9 @@ export class HandGestureController {
       this.lastDetect = 0;
       this.lastUpdate = 0;
 
-      this.onStatus("Cámara activa · muestra una mano");
+      this.onStatus(
+        "Cámara activa · muestra tus manos"
+      );
 
       this.detectFrame();
 
@@ -107,6 +120,70 @@ export class HandGestureController {
     }
   }
 
+  // ========================================
+  // ANALIZAR UNA MANO
+  // ========================================
+
+  analyzeHand(landmarks, index) {
+    const wrist = landmarks[0];
+
+    const tips = [8, 12, 16, 20];
+
+    let extended = 0;
+
+    for (const tipIndex of tips) {
+      const tip = landmarks[tipIndex];
+      const middle = landmarks[tipIndex - 2];
+
+      const tipDistance = Math.hypot(
+        tip.x - wrist.x,
+        tip.y - wrist.y
+      );
+
+      const middleDistance = Math.hypot(
+        middle.x - wrist.x,
+        middle.y - wrist.y
+      );
+
+      if (tipDistance > middleDistance * 1.12) {
+        extended++;
+      }
+    }
+
+    const open = extended >= 3;
+
+    // Distancia entre pulgar e índice
+    const pinchDistance = Math.hypot(
+      landmarks[4].x - landmarks[8].x,
+      landmarks[4].y - landmarks[8].y
+    );
+
+    const pinching = pinchDistance < 0.055;
+
+    // Centro de la palma
+    const palm = landmarks[9];
+
+    return {
+      index,
+
+      x: (0.5 - palm.x) * 12,
+      y: (0.5 - palm.y) * 8,
+      z: -palm.z * 8,
+
+      open,
+      extended,
+      pinching,
+
+      pinchDistance,
+
+      landmarks
+    };
+  }
+
+  // ========================================
+  // DETECCIÓN CONTINUA
+  // ========================================
+
   detectFrame() {
     if (
       !this.running ||
@@ -118,12 +195,14 @@ export class HandGestureController {
 
     const nowCheck = performance.now();
 
+    // Limitar reconocimiento para cuidar el rendimiento
     if (
       this.video.readyState >= 2 &&
       this.video.currentTime !== this.lastVideoTime &&
       nowCheck - this.lastDetect >= 66
     ) {
       this.lastDetect = nowCheck;
+
       this.lastVideoTime = this.video.currentTime;
 
       try {
@@ -132,66 +211,56 @@ export class HandGestureController {
           nowCheck
         );
 
+        // Analizar cada mano detectada
         const hands = (result.landmarks || []).map(
           (landmarks, index) => {
-            const wrist = landmarks[0];
-            const tips = [8, 12, 16, 20];
-
-            let extended = 0;
-
-            for (const tipIndex of tips) {
-              const tip = landmarks[tipIndex];
-              const middle = landmarks[tipIndex - 2];
-
-              const tipDistance = Math.hypot(
-                tip.x - wrist.x,
-                tip.y - wrist.y
-              );
-
-              const middleDistance = Math.hypot(
-                middle.x - wrist.x,
-                middle.y - wrist.y
-              );
-
-              if (tipDistance > middleDistance * 1.12) {
-                extended++;
-              }
-            }
-
-            const open = extended >= 3;
-
-            const pinchDistance = Math.hypot(
-              landmarks[4].x - landmarks[8].x,
-              landmarks[4].y - landmarks[8].y
+            return this.analyzeHand(
+              landmarks,
+              index
             );
-
-            const palm = landmarks[9];
-
-            return {
-              index,
-              x: (0.5 - palm.x) * 12,
-              y: (0.5 - palm.y) * 8,
-              z: -palm.z * 8,
-              open,
-              extended,
-              pinching: pinchDistance < 0.055,
-              landmarks
-            };
           }
         );
 
+        // ------------------------------------
+        // INFORMACIÓN GENERAL
+        // ------------------------------------
+
+        const detected = hands.length > 0;
+
+        const openHand = hands.some(
+          hand => hand.open
+        );
+
+        const closedHand = hands.length > 0 &&
+          hands.every(hand => !hand.open);
+
+        const pinch = hands.some(
+          hand => hand.pinching
+        );
+
+        const twoHands = hands.length >= 2;
+
         const gesture = {
           hands,
-          detected: hands.length > 0,
-          openHand: hands.some(hand => hand.open),
-          closedHand: hands.some(hand => !hand.open),
-          pinch: hands.some(hand => hand.pinching),
-          twoHands: hands.length >= 2,
+
+          detected,
+          openHand,
+          closedHand,
+          pinch,
+          twoHands,
+
           attraction: null,
-          explosion: 0
+          explosion: 0,
+
+          handDistance: 0,
+          center: null
         };
 
-        if (hands.length > 0) {
+        // ------------------------------------
+        // CENTRO DE LAS MANOS
+        // ------------------------------------
+
+        if (detected) {
           const center = hands.reduce(
             (acc, hand) => ({
               x: acc.x + hand.x / hands.length,
@@ -201,27 +270,55 @@ export class HandGestureController {
             { x: 0, y: 0, z: 0 }
           );
 
-          if (hands.some(hand => hand.pinching)) {
+          gesture.center = center;
+
+          // Pinza: atraer hacia el centro de la mano
+          if (pinch) {
             gesture.attraction = center;
           }
-
-          if (hands.length >= 2) {
-            const distance = Math.hypot(
-              hands[0].x - hands[1].x,
-              hands[0].y - hands[1].y
-            );
-
-            gesture.explosion = Math.max(
-              0,
-              Math.min(1, (distance - 2) / 5)
-            );
-          }
         }
+
+        // ------------------------------------
+        // CONTROL CON DOS MANOS
+        // ------------------------------------
+
+        if (twoHands) {
+          const first = hands[0];
+          const second = hands[1];
+
+          const distance = Math.hypot(
+            first.x - second.x,
+            first.y - second.y
+          );
+
+          gesture.handDistance = distance;
+
+          // Separar las manos produce expansión
+          gesture.explosion = Math.max(
+            0,
+            Math.min(
+              1,
+              (distance - 2) / 5
+            )
+          );
+
+          // El punto central entre ambas manos
+          gesture.center = {
+            x: (first.x + second.x) / 2,
+            y: (first.y + second.y) / 2,
+            z: (first.z + second.z) / 2
+          };
+        }
+
+        // ------------------------------------
+        // ENVIAR RESULTADOS
+        // ------------------------------------
 
         const now = performance.now();
 
         if (now - this.lastUpdate >= 40) {
           this.lastUpdate = now;
+
           this.onGesture(gesture);
         }
 
@@ -240,12 +337,17 @@ export class HandGestureController {
     }
   }
 
+  // ========================================
+  // DETENER CÁMARA
+  // ========================================
+
   stop() {
     this.running = false;
     this.starting = false;
 
     if (this.frameId !== null) {
       cancelAnimationFrame(this.frameId);
+
       this.frameId = null;
     }
 
@@ -259,23 +361,32 @@ export class HandGestureController {
 
     if (this.video) {
       this.video.pause();
+
       this.video.srcObject = null;
     }
 
     if (this.landmarker) {
       this.landmarker.close();
+
       this.landmarker = null;
     }
 
     this.onGesture({
       hands: [],
+
       detected: false,
       openHand: false,
       closedHand: false,
       pinch: false,
       twoHands: false,
+
       attraction: null,
-      explosion: 0
+      explosion: 0,
+
+      handDistance: 0,
+      center: null
     });
+
+    this.onStatus("Cámara desactivada");
   }
 }
