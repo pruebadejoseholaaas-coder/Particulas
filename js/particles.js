@@ -1,5 +1,82 @@
+
 import * as THREE from "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js";
 import { createShape } from "./shapes.js";
+
+const vertexShader = `
+  attribute vec3 aTarget;
+  attribute float aPhase;
+
+  uniform float uTime;
+  uniform float uSpeed;
+  uniform float uEnergy;
+  uniform float uSize;
+  uniform float uExplosion;
+
+  uniform vec3 uAttraction;
+  uniform float uAttractionActive;
+
+  uniform vec2 uPointer;
+  uniform float uPointerActive;
+
+  varying float vGlow;
+
+  void main() {
+    vec3 pos = aTarget;
+
+    float wave = sin(uTime * uSpeed + aPhase);
+    float wave2 = cos(uTime * uSpeed * 0.7 + aPhase);
+
+    pos.x += wave * 0.035 * uEnergy;
+    pos.y += wave2 * 0.035 * uEnergy;
+    pos.z += sin(uTime * 0.5 + aPhase) * 0.025 * uEnergy;
+
+    vec3 direction = normalize(aTarget + vec3(0.001));
+
+    pos += direction * uExplosion * 2.5;
+
+    if (uAttractionActive > 0.5) {
+      vec3 diff = uAttraction - pos;
+      float dist = length(diff);
+      float force = 1.0 / (1.0 + dist * dist * 0.15);
+      pos += diff * force * 0.7;
+    }
+
+    if (uPointerActive > 0.5) {
+      vec2 diff = uPointer - pos.xy;
+      float dist = length(diff);
+      float force = 1.0 / (1.0 + dist * dist);
+      pos.xy += diff * force * 0.35;
+    }
+
+    vec4 mvPosition = modelViewMatrix * vec4(pos, 1.0);
+
+    gl_PointSize = uSize * (300.0 / -mvPosition.z);
+    gl_PointSize = clamp(gl_PointSize, 1.0, 24.0);
+
+    gl_Position = projectionMatrix * mvPosition;
+
+    vGlow = 0.65 + 0.35 * abs(wave);
+  }
+`;
+
+const fragmentShader = `
+  uniform vec3 uColor;
+
+  varying float vGlow;
+
+  void main() {
+    vec2 uv = gl_PointCoord - vec2(0.5);
+    float dist = length(uv);
+
+    if (dist > 0.5) discard;
+
+    float core = smoothstep(0.5, 0.0, dist);
+    float glow = exp(-dist * 9.0);
+
+    vec3 color = uColor * (core + glow * 0.45);
+    gl_FragColor = vec4(color * vGlow, core * 0.95);
+  }
+`;
 
 export class ParticleEngine {
   constructor(container) {
@@ -31,21 +108,28 @@ export class ParticleEngine {
       0.1,
       100
     );
+
     this.camera.position.set(0, 0, 17);
 
     this.renderer = new THREE.WebGLRenderer({
       antialias: false,
       alpha: false,
-      powerPreference: "low-power"
+      powerPreference: "high-performance"
     });
+
     this.renderer.setPixelRatio(1);
-    this.renderer.setSize(container.clientWidth, container.clientHeight);
+    this.renderer.setSize(
+      container.clientWidth,
+      container.clientHeight
+    );
+
     container.appendChild(this.renderer.domElement);
 
     this.group = new THREE.Group();
     this.scene.add(this.group);
 
     this.createParticles(this.count);
+
     this.resizeHandler = () => this.resize();
     window.addEventListener("resize", this.resizeHandler);
 
@@ -61,38 +145,77 @@ export class ParticleEngine {
     }
 
     this.count = count;
+
     this.positions = createShape(this.mode, count);
     this.targets = this.positions.slice();
-    this.velocities = new Float32Array(count * 3);
-    this.randomOffsets = new Float32Array(count);
+
+    const phases = new Float32Array(count);
 
     for (let i = 0; i < count; i++) {
-      this.randomOffsets[i] = Math.random() * Math.PI * 2;
+      phases[i] = Math.random() * Math.PI * 2;
     }
 
     const geometry = new THREE.BufferGeometry();
+
     geometry.setAttribute(
       "position",
-      new THREE.BufferAttribute(this.positions, 3).setUsage(THREE.DynamicDrawUsage)
+      new THREE.BufferAttribute(this.positions, 3)
     );
 
-    this.material = new THREE.PointsMaterial({
-      color: this.color,
-      size: this.particleSize,
-      sizeAttenuation: true,
+    geometry.setAttribute(
+      "aTarget",
+      new THREE.BufferAttribute(this.targets, 3)
+    );
+
+    geometry.setAttribute(
+      "aPhase",
+      new THREE.BufferAttribute(phases, 1)
+    );
+
+    this.material = new THREE.ShaderMaterial({
+      uniforms: {
+        uTime: { value: 0 },
+        uSpeed: { value: this.speed },
+        uEnergy: { value: this.energy },
+        uSize: { value: this.particleSize },
+        uColor: { value: new THREE.Color(this.color) },
+        uExplosion: { value: 0 },
+
+        uAttraction: {
+          value: new THREE.Vector3()
+        },
+
+        uAttractionActive: { value: 0 },
+
+        uPointer: {
+          value: new THREE.Vector2()
+        },
+
+        uPointerActive: { value: 0 }
+      },
+
+      vertexShader,
+      fragmentShader,
       transparent: true,
-      opacity: 0.92,
       depthWrite: false,
       blending: THREE.AdditiveBlending
     });
 
-    this.points = new THREE.Points(geometry, this.material);
+    this.points = new THREE.Points(
+      geometry,
+      this.material
+    );
+
     this.group.add(this.points);
   }
 
   setShape(name) {
     this.mode = name;
     this.targets = createShape(name, this.count);
+
+    const attribute = this.points.geometry.attributes.aTarget;
+    attribute.array.set(this.targets);
+    attribute.needsUpdate = true;
   }
 
   setCount(count) {
@@ -101,34 +224,56 @@ export class ParticleEngine {
 
   setColor(color) {
     this.color = color;
-    this.material.color.set(color);
+    this.material.uniforms.uColor.value.set(color);
   }
 
   setSize(size) {
     this.particleSize = size;
-    this.material.size = size;
+    this.material.uniforms.uSize.value = size;
   }
 
   setSpeed(speed) {
     this.speed = speed;
+    this.material.uniforms.uSpeed.value = speed;
   }
 
   setEnergy(energy) {
     this.energy = energy;
+    this.material.uniforms.uEnergy.value = energy;
   }
 
   setAttraction(point) {
     this.attraction = point;
+
+    const uniforms = this.material.uniforms;
+
+    if (point) {
+      uniforms.uAttraction.value.set(
+        point.x,
+        point.y,
+        point.z
+      );
+
+      uniforms.uAttractionActive.value = 1;
+    } else {
+      uniforms.uAttractionActive.value = 0;
+    }
   }
 
   setExplosion(value) {
     this.explosion = value;
+    this.material.uniforms.uExplosion.value = value;
   }
 
   setPointer(x, y, active = true) {
     this.pointer.x = x;
     this.pointer.y = y;
     this.pointer.active = active;
+
+    const uniforms = this.material.uniforms;
+
+    uniforms.uPointer.value.set(x, y);
+    uniforms.uPointerActive.value = active ? 1 : 0;
   }
 
   setPaused(value) {
@@ -143,6 +288,7 @@ export class ParticleEngine {
 
     this.camera.aspect = width / height;
     this.camera.updateProjectionMatrix();
+
     this.renderer.setSize(width, height);
   }
 
@@ -156,88 +302,34 @@ export class ParticleEngine {
       return;
     }
 
-    const nowMs = performance.now();
-    if (nowMs - this.lastFrameTime < 30) return;
-    this.lastFrameTime = nowMs;
+    const now = performance.now();
+
+    if (now - this.lastFrameTime < 30) return;
+
+    this.lastFrameTime = now;
 
     const delta = Math.min(this.clock.getDelta(), 0.05);
     const elapsed = this.clock.elapsedTime;
 
     if (!this.paused) {
-      const positions = this.positions;
-      const targets = this.targets;
-      const velocities = this.velocities;
-      const count = this.count;
-      const attraction = this.attraction;
-      const explosion = this.explosion;
-      const pointer = this.pointer;
+      this.material.uniforms.uTime.value = elapsed;
 
-      for (let i = 0; i < count; i++) {
-        const k = i * 3;
-        const phase = this.randomOffsets[i];
-        const wave = Math.sin(elapsed * this.speed + phase) * 0.025 * this.energy;
+      this.explosion *= Math.pow(0.08, delta);
 
-        let tx = targets[k];
-        let ty = targets[k + 1];
-        let tz = targets[k + 2];
-
-        tx += Math.cos(elapsed * 0.35 + phase) * wave;
-        ty += Math.sin(elapsed * 0.45 + phase) * wave;
-        tz += Math.cos(elapsed * 0.4 + phase) * wave;
-
-        if (attraction) {
-          const dx = attraction.x - positions[k];
-          const dy = attraction.y - positions[k + 1];
-          const dz = attraction.z - positions[k + 2];
-          const distance = Math.sqrt(dx * dx + dy * dy + dz * dz) + 0.001;
-          const force = Math.min(0.09, 1.8 / (distance * distance));
-          velocities[k] += dx * force * delta;
-          velocities[k + 1] += dy * force * delta;
-          velocities[k + 2] += dz * force * delta;
-        }
-
-        if (pointer.active) {
-          const dx = pointer.x - positions[k];
-          const dy = pointer.y - positions[k + 1];
-          const distanceSq = dx * dx + dy * dy + 0.5;
-          const force = Math.min(0.035, 0.5 / distanceSq) * delta;
-          velocities[k] += dx * force;
-          velocities[k + 1] += dy * force;
-        }
-
-        if (explosion > 0.01) {
-          const length = Math.sqrt(
-            positions[k] * positions[k] +
-            positions[k + 1] * positions[k + 1] +
-            positions[k + 2] * positions[k + 2]
-          ) + 0.001;
-
-          const force = explosion * delta * 5 / length;
-          velocities[k] += positions[k] * force;
-          velocities[k + 1] += positions[k + 1] * force;
-          velocities[k + 2] += positions[k + 2] * force;
-        }
-
-        const damping = Math.pow(0.92, delta * 60);
-        velocities[k] *= damping;
-        velocities[k + 1] *= damping;
-        velocities[k + 2] *= damping;
-
-        const follow = Math.min(1, delta * 2.5 * this.speed);
-        positions[k] += (tx - positions[k]) * follow + velocities[k];
-        positions[k + 1] += (ty - positions[k + 1]) * follow + velocities[k + 1];
-        positions[k + 2] += (tz - positions[k + 2]) * follow + velocities[k + 2];
+      if (this.explosion < 0.001) {
+        this.explosion = 0;
       }
 
-      this.points.geometry.attributes.position.needsUpdate = true;
+      this.material.uniforms.uExplosion.value = this.explosion;
+
       this.group.rotation.y += delta * 0.06 * this.speed;
       this.group.rotation.x = Math.sin(elapsed * 0.15) * 0.08;
-      this.explosion *= Math.pow(0.08, delta);
     }
 
     this.renderer.render(this.scene, this.camera);
 
     this.frameCount++;
+
     if (elapsed - this.lastFpsTime >= 1) {
       this.fps = this.frameCount;
       this.frameCount = 0;
@@ -247,11 +339,22 @@ export class ParticleEngine {
 
   dispose() {
     this.disposed = true;
+
     cancelAnimationFrame(this.animationId);
-    window.removeEventListener("resize", this.resizeHandler);
+
+    window.removeEventListener(
+      "resize",
+      this.resizeHandler
+    );
+
     this.renderer.dispose();
-    this.material.dispose();
-    this.points.geometry.dispose();
+
+    if (this.points) {
+      this.group.remove(this.points);
+      this.points.geometry.dispose();
+      this.points.material.dispose();
+    }
+
     this.renderer.domElement.remove();
   }
 }
